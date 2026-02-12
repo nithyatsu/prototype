@@ -4,17 +4,24 @@ A simple **Frontend → Backend → Database** application built with [Radius](h
 
 ## Architecture
 
-![Architecture Diagram](docs/architecture.png)
 
-> *Auto-generated every 2 hours from `app.bicep`.*
->
-> **[👉 Click here for the interactive version](docs/architecture.html)** — click any node to jump to its definition in the source.
+> *Auto-generated from `app.bicep` — click any node to jump to its definition in the source.*
 
-| Component | Image | Port | Description |
-|-----------|-------|------|-------------|
-| Frontend  | `nginx:alpine` | 80 | Serves the web UI |
-| Backend   | `node:18-alpine` | 3000 | Handles API requests |
-| Database  | Redis (Radius-managed) | — | Simple data store |
+```mermaid
+graph LR
+    classDef container fill:#161b22,stroke:#58a6ff,stroke-width:2px,color:#e6edf3
+    classDef datastore fill:#161b22,stroke:#f78166,stroke-width:2px,color:#e6edf3
+    classDef other fill:#161b22,stroke:#8b949e,stroke-width:2px,color:#e6edf3
+    frontend["frontend<br/>nginx:alpine<br/>port 80<br/>app.bicep L18"]:::container
+    backend["backend<br/>node:18-alpine<br/>port 3000<br/>app.bicep L45"]:::container
+    database["database<br/>app.bicep L75"]:::datastore
+    frontend --> backend
+    backend --> database
+    click frontend "https://github.com/nithyatsu/prototype/blob/main/app.bicep#L18" "frontend defined at app.bicep line 18"
+    click backend "https://github.com/nithyatsu/prototype/blob/main/app.bicep#L45" "backend defined at app.bicep line 45"
+    click database "https://github.com/nithyatsu/prototype/blob/main/app.bicep#L75" "database defined at app.bicep line 75"
+```
+
 
 ## Prerequisites
 

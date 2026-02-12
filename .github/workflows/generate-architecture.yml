@@ -1,8 +1,9 @@
 # ---------------------------------------------------------------
 # Architecture Diagram Generator
 # ---------------------------------------------------------------
-# Parses app.bicep, generates an interactive architecture diagram (SVG)
-# with clickable nodes linking to source lines, and updates README.md.
+# Parses app.bicep, generates an interactive Mermaid architecture
+# diagram with clickable nodes linking to source lines, and
+# updates README.md with the diagram inline.
 #
 # Trigger: Every 2 hours + manual dispatch
 # Based on: workflow-spec.md
@@ -32,11 +33,6 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update && sudo apt-get install -y graphviz
-          pip install graphviz
-
       - name: Generate architecture diagram
         env:
           REPO_OWNER: ${{ github.repository_owner }}
@@ -48,7 +44,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add docs/architecture.png docs/architecture.svg docs/architecture.html README.md
+          git add README.md
           # Only commit if there are changes
           git diff --staged --quiet || git commit -m "docs: update architecture diagram [automated]"
           git push

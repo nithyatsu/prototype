@@ -1,37 +1,21 @@
 #!/usr/bin/env python3
 """
-Parse app.bicep and generate an interactive architecture diagram.
+Parse app.bicep and generate an interactive architecture diagram using Mermaid.
 
-GitHub's markdown renderer sanitizes SVGs and strips <a> links, so simple
-SVG embedding with hyperlinks won't produce clickable nodes. Instead we:
+GitHub natively renders Mermaid code blocks in markdown, and Mermaid supports
+click directives that turn nodes into hyperlinks. This means the diagram
+embedded directly in the README has clickable nodes - each one opens app.bicep
+at the line where that resource is defined.
 
-  1. Render the graph as SVG via Graphviz (with URL/tooltip attributes).
-  2. Also render a CMAPX (client-side HTML image map) from the same graph.
-  3. Render a PNG version of the graph for the image map to reference.
-  4. Write an HTML file (docs/architecture.html) that combines the PNG +
-     image map so each node is a clickable region linking to the correct
-     line in app.bicep on GitHub.
-  5. Update README.md with a PNG preview and a link to the interactive HTML.
-
-The interactive HTML can be viewed via GitHub Pages or by opening the raw
-file locally.
+No external HTML page, no image maps, no GitHub Pages needed.
 """
 
 import re
 import os
 import sys
-import subprocess
-from pathlib import Path
-
-try:
-    import graphviz
-except ImportError:
-    print("Installing graphviz python package...")
-    os.system(f"{sys.executable} -m pip install graphviz")
-    import graphviz
 
 
-def parse_bicep(bicep_path: str) -> tuple[list[dict], list[dict]]:
+def parse_bicep(bicep_path):
     """Parse a Bicep file and extract resources, connections, and line numbers."""
     with open(bicep_path, "r") as f:
         content = f.read()
@@ -39,7 +23,6 @@ def parse_bicep(bicep_path: str) -> tuple[list[dict], list[dict]]:
     resources = []
     connections = []
 
-    # Match resource blocks: resource <symbolic_name> '<type>' = {
     resource_pattern = re.compile(
         r"resource\s+(\w+)\s+'([^']+)'\s*=\s*\{(.*?)\n\}",
         re.DOTALL,
@@ -50,22 +33,17 @@ def parse_bicep(bicep_path: str) -> tuple[list[dict], list[dict]]:
         resource_type = match.group(2)
         body = match.group(3)
 
-        # Calculate the 1-based line number where this resource is defined
         line_number = content[: match.start()].count("\n") + 1
 
-        # Extract the 'name' property
         name_match = re.search(r"name:\s*'([^']+)'", body)
         display_name = name_match.group(1) if name_match else symbolic_name
 
-        # Extract image if present
         image_match = re.search(r"image:\s*'([^']+)'", body)
         image = image_match.group(1) if image_match else None
 
-        # Extract container port
         port_match = re.search(r"containerPort:\s*(\d+)", body)
         port = port_match.group(1) if port_match else None
 
-        # Determine resource category
         if "containers" in resource_type.lower():
             category = "container"
         elif "rediscaches" in resource_type.lower():
@@ -89,19 +67,14 @@ def parse_bicep(bicep_path: str) -> tuple[list[dict], list[dict]]:
             "line_number": line_number,
         })
 
-        # Extract connections from the body
         conn_pattern = re.compile(r"connections:\s*\{(.*?)\n\s*\}", re.DOTALL)
         conn_match = conn_pattern.search(body)
         if conn_match:
             conn_body = conn_match.group(1)
             conn_entries = re.findall(r"(\w+):\s*\{", conn_body)
             for target in conn_entries:
-                connections.append({
-                    "from": symbolic_name,
-                    "to": target,
-                })
+                connections.append({"from": symbolic_name, "to": target})
 
-        # Extract connections via source references like database.id
         source_refs = re.findall(r"source:\s*(\w+)\.(id|connectionString)", body)
         for ref_name, _ in source_refs:
             conn = {"from": symbolic_name, "to": ref_name}
@@ -111,76 +84,21 @@ def parse_bicep(bicep_path: str) -> tuple[list[dict], list[dict]]:
     return resources, connections
 
 
-def get_github_file_url(repo_owner: str, repo_name: str, branch: str, file_path: str, line: int) -> str:
+def get_github_file_url(repo_owner, repo_name, branch, file_path, line):
     """Build a GitHub URL that highlights a specific line."""
     return f"https://github.com/{repo_owner}/{repo_name}/blob/{branch}/{file_path}#L{line}"
 
 
-def generate_graph(
-    resources: list[dict],
-    connections: list[dict],
-    output_dir: str,
-    repo_owner: str,
-    repo_name: str,
-    branch: str,
-    bicep_file: str,
-):
-    """Generate a PNG diagram, an SVG with links, and an HTML page with an image map."""
+def generate_mermaid(resources, connections, repo_owner, repo_name, branch, bicep_file):
+    """Generate a Mermaid diagram string with clickable nodes."""
 
-    dot = graphviz.Digraph(
-        "architecture",
-        engine="dot",
-    )
+    lines = ["graph LR"]
 
-    # GitHub-inspired global styling
-    dot.attr(
-        rankdir="LR",
-        bgcolor="#0d1117",
-        fontname="Segoe UI, Helvetica, Arial, sans-serif",
-        fontcolor="#e6edf3",
-        pad="0.5",
-        nodesep="1",
-        ranksep="1.5",
-        label=f"Architecture \u00b7 {bicep_file}",
-        labelloc="t",
-        fontsize="18",
-        style="rounded",
-    )
+    # Style classes for categories
+    lines.append("    classDef container fill:#161b22,stroke:#58a6ff,stroke-width:2px,color:#e6edf3")
+    lines.append("    classDef datastore fill:#161b22,stroke:#f78166,stroke-width:2px,color:#e6edf3")
+    lines.append("    classDef other fill:#161b22,stroke:#8b949e,stroke-width:2px,color:#e6edf3")
 
-    # Default node styling (GitHub dark theme)
-    dot.attr(
-        "node",
-        shape="box",
-        style="filled,rounded",
-        fillcolor="#161b22",
-        color="#30363d",
-        fontcolor="#e6edf3",
-        fontname="Segoe UI, Helvetica, Arial, sans-serif",
-        fontsize="12",
-        margin="0.3,0.2",
-        penwidth="1.5",
-    )
-
-    # Default edge styling
-    dot.attr(
-        "edge",
-        color="#58a6ff",
-        fontcolor="#8b949e",
-        fontname="Segoe UI, Helvetica, Arial, sans-serif",
-        fontsize="10",
-        arrowsize="0.8",
-        penwidth="1.5",
-    )
-
-    # Color scheme per category (GitHub palette)
-    category_colors = {
-        "container": {"fillcolor": "#161b22", "color": "#58a6ff"},   # Blue border
-        "datastore": {"fillcolor": "#161b22", "color": "#f78166"},   # Orange border
-        "application": {"fillcolor": "#161b22", "color": "#3fb950"}, # Green border
-        "other": {"fillcolor": "#161b22", "color": "#8b949e"},       # Gray border
-    }
-
-    # Build a lookup from symbolic_name -> resource
     resource_map = {r["symbolic_name"]: r for r in resources}
 
     # Add nodes (skip the top-level application resource)
@@ -188,31 +106,16 @@ def generate_graph(
         if res["category"] == "application":
             continue
 
-        colors = category_colors.get(res["category"], category_colors["other"])
-
-        # Build label
-        lines = [f"{res['display_name']}"]
+        # Build node label with resource details and source location
+        label_parts = [res["display_name"]]
         if res["image"]:
-            lines.append(f"{res['image']}")
+            label_parts.append(res["image"])
         if res["port"]:
-            lines.append(f":{res['port']}")
+            label_parts.append("port " + res["port"])
+        label_parts.append(bicep_file + " L" + str(res["line_number"]))
 
-        label = "\\n".join(lines)
-
-        # GitHub URL for this resource's line
-        url = get_github_file_url(repo_owner, repo_name, branch, bicep_file, res["line_number"])
-        tooltip = f"{res['display_name']} \u2014 {bicep_file} line {res['line_number']}"
-
-        dot.node(
-            res["symbolic_name"],
-            label=label,
-            fillcolor=colors["fillcolor"],
-            color=colors["color"],
-            penwidth="2",
-            URL=url,
-            tooltip=tooltip,
-            target="_blank",
-        )
+        label = "<br/>".join(label_parts)
+        lines.append('    {}["{}"]:::{}'.format(res["symbolic_name"], label, res["category"]))
 
     # Add edges
     for conn in connections:
@@ -221,103 +124,34 @@ def generate_graph(
             to_res = resource_map[conn["to"]]
             if from_res["category"] == "application" or to_res["category"] == "application":
                 continue
-            dot.edge(conn["from"], conn["to"])
+            lines.append("    {} --> {}".format(conn["from"], conn["to"]))
 
-    # Ensure output directory exists
-    os.makedirs(output_dir, exist_ok=True)
+    # Add click directives - each node links to its line in app.bicep
+    for res in resources:
+        if res["category"] == "application":
+            continue
+        url = get_github_file_url(repo_owner, repo_name, branch, bicep_file, res["line_number"])
+        tooltip = "{} defined at {} line {}".format(res["display_name"], bicep_file, res["line_number"])
+        lines.append('    click {} "{}" "{}"'.format(res["symbolic_name"], url, tooltip))
 
-    dot_path = os.path.join(output_dir, "architecture.dot")
-    dot.save(dot_path)
-
-    # --- 1. Render PNG ---
-    png_path = os.path.join(output_dir, "architecture.png")
-    dot.format = "png"
-    dot.render(os.path.join(output_dir, "architecture"), cleanup=False)
-    print(f"  PNG saved to {png_path}")
-
-    # --- 2. Render SVG (with embedded links for local/raw viewing) ---
-    svg_path = os.path.join(output_dir, "architecture.svg")
-    dot.format = "svg"
-    dot.render(os.path.join(output_dir, "architecture"), cleanup=False)
-    print(f"  SVG saved to {svg_path}")
-
-    # --- 3. Render CMAPX (HTML image map) ---
-    cmapx_result = subprocess.run(
-        ["dot", "-Tcmapx", dot_path],
-        capture_output=True, text=True, check=True,
-    )
-    image_map = cmapx_result.stdout
-    print(f"  Image map generated")
-
-    # --- 4. Build interactive HTML page ---
-    html_path = os.path.join(output_dir, "architecture.html")
-    html_content = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Architecture \u00b7 {bicep_file}</title>
-  <style>
-    body {{
-      margin: 0;
-      padding: 24px;
-      background: #0d1117;
-      color: #e6edf3;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-    }}
-    h1 {{
-      font-size: 20px;
-      font-weight: 600;
-      margin-bottom: 8px;
-      color: #e6edf3;
-    }}
-    p {{
-      font-size: 14px;
-      color: #8b949e;
-      margin-bottom: 24px;
-    }}
-    .diagram-container {{
-      border: 1px solid #30363d;
-      border-radius: 6px;
-      padding: 16px;
-      background: #161b22;
-      display: inline-block;
-    }}
-    img {{
-      max-width: 100%;
-      height: auto;
-    }}
-    a {{ color: #58a6ff; }}
-  </style>
-</head>
-<body>
-  <h1>Architecture \u00b7 {bicep_file}</h1>
-  <p>Click any node to open <a href="https://github.com/{repo_owner}/{repo_name}/blob/{branch}/{bicep_file}">{bicep_file}</a> at the corresponding line.</p>
-  <div class="diagram-container">
-    <img src="architecture.png" usemap="#architecture" alt="Architecture Diagram">
-    {image_map}
-  </div>
-</body>
-</html>
-"""
-    with open(html_path, "w") as f:
-        f.write(html_content)
-    print(f"  HTML saved to {html_path}")
-
-    # Clean up dot file
-    if os.path.exists(dot_path):
-        os.remove(dot_path)
-
-    return png_path, svg_path, html_path
+    return "\n".join(lines)
 
 
-def update_readme(readme_path: str, png_rel_path: str, html_rel_path: str):
-    """Update the Architecture section in README.md with the diagram and interactive link."""
+def update_readme(readme_path, mermaid_block):
+    """Update the Architecture section in README.md with the Mermaid diagram."""
     with open(readme_path, "r") as f:
         content = f.read()
+
+    # Build the new Architecture section body
+    new_body = "\n".join([
+        "",
+        "> *Auto-generated from `app.bicep` \u2014 click any node to jump to its definition in the source.*",
+        "",
+        "```mermaid",
+        mermaid_block,
+        "```",
+        "",
+    ])
 
     # Replace the Architecture section content
     pattern = re.compile(
@@ -325,44 +159,27 @@ def update_readme(readme_path: str, png_rel_path: str, html_rel_path: str):
         re.DOTALL,
     )
 
-    note = (
-        "> *Auto-generated every 2 hours from `app.bicep`.*\n"
-        "> \n"
-        f"> **[\U0001f449 Click here for the interactive version]({html_rel_path})** "
-        "— click any node to jump to its definition in the source."
-    )
-
-    replacement_content = (
-        f"\\1\n"
-        f"![Architecture Diagram]({png_rel_path})\n\n"
-        f"{note}\n"
-        f"\n"
-        f"\\2"
-    )
-
     if pattern.search(content):
-        new_content = pattern.sub(replacement_content, content)
+        new_content = pattern.sub(r"\1" + new_body + "\n" + r"\2", content)
     else:
-        new_content = content + (
-            f"\n## Architecture\n\n"
-            f"![Architecture Diagram]({png_rel_path})\n\n"
-            f"{note}\n"
-        )
+        new_content = content + "\n## Architecture\n" + new_body + "\n"
 
     with open(readme_path, "w") as f:
         f.write(new_content)
 
-    print(f"README.md updated")
+    print("README.md updated")
 
 
 def main():
-    repo_root = os.environ.get("GITHUB_WORKSPACE", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    repo_root = os.environ.get(
+        "GITHUB_WORKSPACE",
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    )
     bicep_file = "app.bicep"
     bicep_path = os.path.join(repo_root, bicep_file)
-    output_dir = os.path.join(repo_root, "docs")
     readme_path = os.path.join(repo_root, "README.md")
 
-    # Repository info — used to build GitHub URLs for clickable nodes
+    # Repository info for building GitHub URLs for clickable nodes
     repo_owner = os.environ.get("REPO_OWNER", "nithyatsu")
     repo_name = os.environ.get("REPO_NAME", "prototype")
     branch = os.environ.get("REPO_BRANCH", "main")
@@ -376,18 +193,21 @@ def main():
 
     print(f"Found {len(resources)} resources and {len(connections)} connections")
     for r in resources:
-        print(f"  - {r['display_name']} ({r['category']}) @ line {r['line_number']}")
+        print("  - {} ({}) @ line {}".format(r["display_name"], r["category"], r["line_number"]))
     for c in connections:
-        print(f"  - {c['from']} \u2192 {c['to']}")
+        print("  - {} -> {}".format(c["from"], c["to"]))
 
-    print(f"\nGenerating diagram outputs...")
-    png_path, svg_path, html_path = generate_graph(
-        resources, connections, output_dir,
+    print("\nGenerating Mermaid diagram...")
+    mermaid_block = generate_mermaid(
+        resources, connections,
         repo_owner, repo_name, branch, bicep_file,
     )
 
-    print(f"\nUpdating README...")
-    update_readme(readme_path, "docs/architecture.png", "docs/architecture.html")
+    print("\nMermaid output:")
+    print(mermaid_block)
+
+    print("\nUpdating README...")
+    update_readme(readme_path, mermaid_block)
 
     print("Done!")
 
