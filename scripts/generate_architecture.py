@@ -101,7 +101,7 @@ def generate_mermaid(resources, connections, repo_owner, repo_name, branch, bice
                      "'primaryColor': '#ffffff', "
                      "'primaryTextColor': '#1f2328', "
                      "'primaryBorderColor': '#d1d9e0', "
-                     "'lineColor': '#656d76', "
+                     "'lineColor': '#2da44e', "
                      "'secondaryColor': '#f6f8fa', "
                      "'tertiaryColor': '#ffffff', "
                      "'background': '#ffffff', "
@@ -115,11 +115,11 @@ def generate_mermaid(resources, connections, repo_owner, repo_name, branch, bice
 
     # Class definitions — GitHub light palette with rounded corners
     # Container: blue accent (like GitHub's blue links/actions)
-    lines.append("    classDef container fill:#ddf4ff,stroke:#218bff,stroke-width:1.5px,color:#1f2328,rx:6,ry:6")
+    lines.append("    classDef container fill:#ffffff,stroke:#2da44e,stroke-width:1.5px,color:#1f2328,rx:6,ry:6")
     # Datastore: orange accent (like GitHub's warning/merge colors)
-    lines.append("    classDef datastore fill:#fff8c5,stroke:#d4a72c,stroke-width:1.5px,color:#1f2328,rx:6,ry:6")
+    lines.append("    classDef datastore fill:#ffffff,stroke:#d4a72c,stroke-width:1.5px,color:#1f2328,rx:6,ry:6")
     # Other: neutral gray
-    lines.append("    classDef other fill:#f6f8fa,stroke:#d1d9e0,stroke-width:1.5px,color:#1f2328,rx:6,ry:6")
+    lines.append("    classDef other fill:#ffffff,stroke:#d1d9e0,stroke-width:1.5px,color:#1f2328,rx:6,ry:6")
 
     resource_map = {r["symbolic_name"]: r for r in resources}
 
@@ -164,7 +164,7 @@ def generate_mermaid(resources, connections, repo_owner, repo_name, branch, bice
             to_res = resource_map[conn["to"]]
             if from_res["category"] == "application" or to_res["category"] == "application":
                 continue
-            lines.append("    linkStyle {} stroke:#656d76,stroke-width:1.5px".format(edge_count))
+            lines.append("    linkStyle {} stroke:#2da44e,stroke-width:1.5px".format(edge_count))
             edge_count += 1
 
     return "\n".join(lines)
