@@ -94,52 +94,59 @@ def generate_mermaid(resources, connections, repo_owner, repo_name, branch, bice
 
     lines = ["graph LR"]
 
-    # --- GitHub-inspired theme & styling ---
-    # Use %%{ init }%% for Mermaid config would go before graph, so we use classDef instead.
-    # Node styles — rounded via stadium-shaped syntax, GitHub dark palette
-    lines.insert(0, "%%{ init: { 'theme': 'dark', 'themeVariables': { "
-                     "'primaryColor': '#161b22', "
-                     "'primaryTextColor': '#e6edf3', "
-                     "'primaryBorderColor': '#30363d', "
-                     "'lineColor': '#58a6ff', "
-                     "'secondaryColor': '#21262d', "
-                     "'tertiaryColor': '#0d1117', "
+    # --- GitHub light theme styling ---
+    # Matches GitHub's own dependency/action graph look:
+    # white background, light gray borders, clean rounded-corner boxes
+    lines.insert(0, "%%{ init: { 'theme': 'base', 'themeVariables': { "
+                     "'primaryColor': '#ffffff', "
+                     "'primaryTextColor': '#1f2328', "
+                     "'primaryBorderColor': '#d1d9e0', "
+                     "'lineColor': '#656d76', "
+                     "'secondaryColor': '#f6f8fa', "
+                     "'tertiaryColor': '#ffffff', "
+                     "'background': '#ffffff', "
+                     "'mainBkg': '#ffffff', "
+                     "'nodeBorder': '#d1d9e0', "
+                     "'clusterBkg': '#f6f8fa', "
+                     "'clusterBorder': '#d1d9e0', "
                      "'fontSize': '14px', "
-                     "'fontFamily': '-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif'"
+                     "'fontFamily': '-apple-system, BlinkMacSystemFont, Segoe UI, Noto Sans, Helvetica, Arial, sans-serif'"
                      " } } }%%")
 
-    # Class definitions for different resource types
-    lines.append("    classDef container fill:#161b22,stroke:#58a6ff,stroke-width:2px,color:#e6edf3,rx:12,ry:12")
-    lines.append("    classDef datastore fill:#161b22,stroke:#f78166,stroke-width:2px,color:#e6edf3,rx:12,ry:12")
-    lines.append("    classDef other fill:#161b22,stroke:#8b949e,stroke-width:2px,color:#e6edf3,rx:12,ry:12")
+    # Class definitions — GitHub light palette with rounded corners
+    # Container: blue accent (like GitHub's blue links/actions)
+    lines.append("    classDef container fill:#ddf4ff,stroke:#218bff,stroke-width:1.5px,color:#1f2328,rx:6,ry:6")
+    # Datastore: orange accent (like GitHub's warning/merge colors)
+    lines.append("    classDef datastore fill:#fff8c5,stroke:#d4a72c,stroke-width:1.5px,color:#1f2328,rx:6,ry:6")
+    # Other: neutral gray
+    lines.append("    classDef other fill:#f6f8fa,stroke:#d1d9e0,stroke-width:1.5px,color:#1f2328,rx:6,ry:6")
 
     resource_map = {r["symbolic_name"]: r for r in resources}
 
     # Add nodes (skip the top-level application resource)
-    # Use stadium shape ([" "]) for smooth rounded pill-shape nodes
+    # Use regular box nodes [" "] — rounded corners come from rx/ry in classDef
     for res in resources:
         if res["category"] == "application":
             continue
 
-        # Build label — clean, no line numbers (those go in tooltip)
+        # Build label — clean, no line numbers (those go in tooltip only)
         label_parts = ["<b>" + res["display_name"] + "</b>"]
         if res["image"]:
-            label_parts.append("<i>" + res["image"] + "</i>")
+            label_parts.append(res["image"])
         if res["port"]:
             label_parts.append(":" + res["port"])
 
         label = "<br/>".join(label_parts)
-        # Stadium-shaped node for rounded pill look
-        lines.append('    {}(["{}"]):::{}'.format(res["symbolic_name"], label, res["category"]))
+        lines.append('    {}["{}"]:::{}'.format(res["symbolic_name"], label, res["category"]))
 
-    # Add edges — use thick arrow style
+    # Add edges — clean arrow style
     for conn in connections:
         if conn["from"] in resource_map and conn["to"] in resource_map:
             from_res = resource_map[conn["from"]]
             to_res = resource_map[conn["to"]]
             if from_res["category"] == "application" or to_res["category"] == "application":
                 continue
-            lines.append("    {} ==> {}".format(conn["from"], conn["to"]))
+            lines.append("    {} --> {}".format(conn["from"], conn["to"]))
 
     # Add click directives — tooltip shows line number, click opens GitHub
     for res in resources:
@@ -149,7 +156,7 @@ def generate_mermaid(resources, connections, repo_owner, repo_name, branch, bice
         tooltip = "{} — {} line {}".format(res["display_name"], bicep_file, res["line_number"])
         lines.append('    click {} "{}" "{}"'.format(res["symbolic_name"], url, tooltip))
 
-    # Link style — thicker, GitHub blue
+    # Link style — GitHub gray, clean
     edge_count = 0
     for conn in connections:
         if conn["from"] in resource_map and conn["to"] in resource_map:
@@ -157,7 +164,7 @@ def generate_mermaid(resources, connections, repo_owner, repo_name, branch, bice
             to_res = resource_map[conn["to"]]
             if from_res["category"] == "application" or to_res["category"] == "application":
                 continue
-            lines.append("    linkStyle {} stroke:#58a6ff,stroke-width:2px".format(edge_count))
+            lines.append("    linkStyle {} stroke:#656d76,stroke-width:1.5px".format(edge_count))
             edge_count += 1
 
     return "\n".join(lines)
