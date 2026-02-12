@@ -48,7 +48,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add docs/architecture.svg README.md
+          git add docs/architecture.png docs/architecture.svg docs/architecture.html README.md
           # Only commit if there are changes
           git diff --staged --quiet || git commit -m "docs: update architecture diagram [automated]"
           git push

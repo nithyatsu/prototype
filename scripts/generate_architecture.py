@@ -1,15 +1,26 @@
 #!/usr/bin/env python3
 """
-Parse app.bicep and generate an interactive architecture diagram (SVG) with
-GitHub UI look-and-feel. Nodes are clickable and link to the exact line in
-app.bicep on GitHub. Tooltips show the line number.
+Parse app.bicep and generate an interactive architecture diagram.
 
-Outputs an SVG to docs/architecture.svg.
+GitHub's markdown renderer sanitizes SVGs and strips <a> links, so simple
+SVG embedding with hyperlinks won't produce clickable nodes. Instead we:
+
+  1. Render the graph as SVG via Graphviz (with URL/tooltip attributes).
+  2. Also render a CMAPX (client-side HTML image map) from the same graph.
+  3. Render a PNG version of the graph for the image map to reference.
+  4. Write an HTML file (docs/architecture.html) that combines the PNG +
+     image map so each node is a clickable region linking to the correct
+     line in app.bicep on GitHub.
+  5. Update README.md with a PNG preview and a link to the interactive HTML.
+
+The interactive HTML can be viewed via GitHub Pages or by opening the raw
+file locally.
 """
 
 import re
 import os
 import sys
+import subprocess
 from pathlib import Path
 
 try:
@@ -108,17 +119,16 @@ def get_github_file_url(repo_owner: str, repo_name: str, branch: str, file_path:
 def generate_graph(
     resources: list[dict],
     connections: list[dict],
-    output_path: str,
+    output_dir: str,
     repo_owner: str,
     repo_name: str,
     branch: str,
     bicep_file: str,
 ):
-    """Generate an interactive SVG architecture diagram with GitHub-inspired styling."""
+    """Generate a PNG diagram, an SVG with links, and an HTML page with an image map."""
 
     dot = graphviz.Digraph(
         "architecture",
-        format="svg",
         engine="dot",
     )
 
@@ -131,7 +141,7 @@ def generate_graph(
         pad="0.5",
         nodesep="1",
         ranksep="1.5",
-        label=f"Architecture · {bicep_file}",
+        label=f"Architecture \u00b7 {bicep_file}",
         labelloc="t",
         fontsize="18",
         style="rounded",
@@ -149,7 +159,6 @@ def generate_graph(
         fontsize="12",
         margin="0.3,0.2",
         penwidth="1.5",
-        target="_blank",
     )
 
     # Default edge styling
@@ -190,9 +199,9 @@ def generate_graph(
 
         label = "\\n".join(lines)
 
-        # GitHub URL for this resource's line — clickable link
+        # GitHub URL for this resource's line
         url = get_github_file_url(repo_owner, repo_name, branch, bicep_file, res["line_number"])
-        tooltip = f"{res['display_name']} — {bicep_file} line {res['line_number']}"
+        tooltip = f"{res['display_name']} \u2014 {bicep_file} line {res['line_number']}"
 
         dot.node(
             res["symbolic_name"],
@@ -210,42 +219,122 @@ def generate_graph(
         if conn["from"] in resource_map and conn["to"] in resource_map:
             from_res = resource_map[conn["from"]]
             to_res = resource_map[conn["to"]]
-            # Skip edges from/to the application node
             if from_res["category"] == "application" or to_res["category"] == "application":
                 continue
             dot.edge(conn["from"], conn["to"])
 
     # Ensure output directory exists
-    output_dir = os.path.dirname(output_path)
-    if output_dir:
-        os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
 
-    # Render (graphviz appends .svg automatically)
-    output_base = output_path.removesuffix(".svg")
-    dot.render(output_base, cleanup=True)
-    print(f"Architecture diagram saved to {output_path}")
+    dot_path = os.path.join(output_dir, "architecture.dot")
+    dot.save(dot_path)
+
+    # --- 1. Render PNG ---
+    png_path = os.path.join(output_dir, "architecture.png")
+    dot.format = "png"
+    dot.render(os.path.join(output_dir, "architecture"), cleanup=False)
+    print(f"  PNG saved to {png_path}")
+
+    # --- 2. Render SVG (with embedded links for local/raw viewing) ---
+    svg_path = os.path.join(output_dir, "architecture.svg")
+    dot.format = "svg"
+    dot.render(os.path.join(output_dir, "architecture"), cleanup=False)
+    print(f"  SVG saved to {svg_path}")
+
+    # --- 3. Render CMAPX (HTML image map) ---
+    cmapx_result = subprocess.run(
+        ["dot", "-Tcmapx", dot_path],
+        capture_output=True, text=True, check=True,
+    )
+    image_map = cmapx_result.stdout
+    print(f"  Image map generated")
+
+    # --- 4. Build interactive HTML page ---
+    html_path = os.path.join(output_dir, "architecture.html")
+    html_content = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Architecture \u00b7 {bicep_file}</title>
+  <style>
+    body {{
+      margin: 0;
+      padding: 24px;
+      background: #0d1117;
+      color: #e6edf3;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }}
+    h1 {{
+      font-size: 20px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: #e6edf3;
+    }}
+    p {{
+      font-size: 14px;
+      color: #8b949e;
+      margin-bottom: 24px;
+    }}
+    .diagram-container {{
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 16px;
+      background: #161b22;
+      display: inline-block;
+    }}
+    img {{
+      max-width: 100%;
+      height: auto;
+    }}
+    a {{ color: #58a6ff; }}
+  </style>
+</head>
+<body>
+  <h1>Architecture \u00b7 {bicep_file}</h1>
+  <p>Click any node to open <a href="https://github.com/{repo_owner}/{repo_name}/blob/{branch}/{bicep_file}">{bicep_file}</a> at the corresponding line.</p>
+  <div class="diagram-container">
+    <img src="architecture.png" usemap="#architecture" alt="Architecture Diagram">
+    {image_map}
+  </div>
+</body>
+</html>
+"""
+    with open(html_path, "w") as f:
+        f.write(html_content)
+    print(f"  HTML saved to {html_path}")
+
+    # Clean up dot file
+    if os.path.exists(dot_path):
+        os.remove(dot_path)
+
+    return png_path, svg_path, html_path
 
 
-def update_readme(readme_path: str, image_rel_path: str):
-    """Update the Architecture section in README.md with the generated SVG."""
+def update_readme(readme_path: str, png_rel_path: str, html_rel_path: str):
+    """Update the Architecture section in README.md with the diagram and interactive link."""
     with open(readme_path, "r") as f:
         content = f.read()
 
     # Replace the Architecture section content
-    # Match from "## Architecture" to the next "##" heading or end of file
     pattern = re.compile(
         r"(## Architecture\s*\n).*?(\n## |\Z)",
         re.DOTALL,
     )
 
     note = (
-        "> *Auto-generated every 2 hours from `app.bicep`. "
-        "Click a node to jump to its definition.*"
+        "> *Auto-generated every 2 hours from `app.bicep`.*\n"
+        "> \n"
+        f"> **[\U0001f449 Click here for the interactive version]({html_rel_path})** "
+        "— click any node to jump to its definition in the source."
     )
 
     replacement_content = (
         f"\\1\n"
-        f"![Architecture Diagram]({image_rel_path})\n\n"
+        f"![Architecture Diagram]({png_rel_path})\n\n"
         f"{note}\n"
         f"\n"
         f"\\2"
@@ -254,24 +343,23 @@ def update_readme(readme_path: str, image_rel_path: str):
     if pattern.search(content):
         new_content = pattern.sub(replacement_content, content)
     else:
-        # Append if section doesn't exist
         new_content = content + (
             f"\n## Architecture\n\n"
-            f"![Architecture Diagram]({image_rel_path})\n\n"
+            f"![Architecture Diagram]({png_rel_path})\n\n"
             f"{note}\n"
         )
 
     with open(readme_path, "w") as f:
         f.write(new_content)
 
-    print(f"README.md updated with architecture SVG reference")
+    print(f"README.md updated")
 
 
 def main():
     repo_root = os.environ.get("GITHUB_WORKSPACE", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     bicep_file = "app.bicep"
     bicep_path = os.path.join(repo_root, bicep_file)
-    output_path = os.path.join(repo_root, "docs", "architecture.svg")
+    output_dir = os.path.join(repo_root, "docs")
     readme_path = os.path.join(repo_root, "README.md")
 
     # Repository info — used to build GitHub URLs for clickable nodes
@@ -290,13 +378,16 @@ def main():
     for r in resources:
         print(f"  - {r['display_name']} ({r['category']}) @ line {r['line_number']}")
     for c in connections:
-        print(f"  - {c['from']} → {c['to']}")
+        print(f"  - {c['from']} \u2192 {c['to']}")
 
-    print(f"\nGenerating interactive SVG diagram...")
-    generate_graph(resources, connections, output_path, repo_owner, repo_name, branch, bicep_file)
+    print(f"\nGenerating diagram outputs...")
+    png_path, svg_path, html_path = generate_graph(
+        resources, connections, output_dir,
+        repo_owner, repo_name, branch, bicep_file,
+    )
 
-    print(f"Updating README...")
-    update_readme(readme_path, "docs/architecture.svg")
+    print(f"\nUpdating README...")
+    update_readme(readme_path, "docs/architecture.png", "docs/architecture.html")
 
     print("Done!")
 

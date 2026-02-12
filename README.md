@@ -4,9 +4,11 @@ A simple **Frontend → Backend → Database** application built with [Radius](h
 
 ## Architecture
 
-![Architecture Diagram](docs/architecture.svg)
+![Architecture Diagram](docs/architecture.png)
 
-> *Auto-generated every 2 hours from `app.bicep`. Click a node to jump to its definition in the source.*
+> *Auto-generated every 2 hours from `app.bicep`.*
+>
+> **[👉 Click here for the interactive version](docs/architecture.html)** — click any node to jump to its definition in the source.
 
 | Component | Image | Port | Description |
 |-----------|-------|------|-------------|
