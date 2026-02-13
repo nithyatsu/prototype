@@ -113,18 +113,38 @@ The GitHub Action reads committed `.radius/app-graph.json` files from git histor
 
 | Event | Behavior |
 |-------|----------|
-| `pull_request` | Posts a diff comment on the PR when `.radius/app-graph.json` changes |
+| `pull_request` (every push) | Posts or updates a diff comment on the PR |
 | `push` to `main` | Updates the baseline for historical comparison |
+
+The comment is posted on **every push** to the PR, not just the first one. If no Bicep/graph changes exist, the comment says "No app graph changes detected."
 
 ### Monorepo support
 
 Auto-detect all `**/.radius/app-graph.json` files. Each graph is diffed independently with separate comment sections per application.
 
+### PR comment format
+
+The comment includes:
+
+1. **Side-by-side Mermaid graphs** — `main` graph on the left, PR graph on the right, for visual comparison.
+2. **Diff graph** — a single Mermaid graph using color-coded nodes:
+   - 🟢 Green border — added resources
+   - 🟡 Amber border — modified resources
+   - 🔴 Red border — removed resources
+   - Gray border — unchanged resources
+3. **Clickable nodes** — clicking a node opens the PR's diff page (`/files`) with the resource's Bicep section in focus (anchored to the diff line).
+4. **Resources & connections table** — lists added/removed/modified resources and connections.
+5. **Footer** — "Powered by [Radius](https://radapp.io/)"
+
 ### Acceptance criteria
 
-1. PR includes changes to `.radius/app-graph.json` → Action posts a comment showing the graph diff (added/removed/modified resources highlighted).
-2. PR has no changes to `.radius/app-graph.json` → Action posts "No app graph changes detected."
-3. PR adds a new connection → Diff clearly shows the new edge with source and target.
-4. PR comment already exists from a previous run → Existing comment is updated, not duplicated.
-5. Bicep files changed but `.radius/app-graph.json` was not updated → CI validation fails with a message to run `rad app graph` and commit the result.
-6. Monorepo with multiple apps (e.g. `apps/frontend/.radius/` and `apps/backend/.radius/`) → Unified comment with separate diff sections per application.
+1. PR includes changes to `.radius/app-graph.json` → Action posts a comment with side-by-side graphs + diff graph.
+2. PR has no Bicep or graph changes → Comment says "No app graph changes detected."
+3. PR adds a new connection → Diff graph shows the new edge; new resource node is green.
+4. PR removes a resource → Diff graph shows the removed node in red (dashed border).
+5. PR modifies a resource → Diff graph shows the modified node in amber.
+6. PR comment already exists from a previous push → Existing comment is updated, not duplicated.
+7. Clicking a node in the diff graph opens the PR diff page with the resource's section in focus.
+8. Bicep files changed but `.radius/app-graph.json` was not updated → CI validation fails with instructions.
+9. Monorepo with multiple apps → Unified comment with separate sections per application.
+10. Comment footer says "Powered by [Radius](https://radapp.io/)".
