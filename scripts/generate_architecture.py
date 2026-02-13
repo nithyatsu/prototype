@@ -247,21 +247,34 @@ def parse_rad_graph_output(output_path):
             # Resolve targetId to resource name
             target_name = id_to_name.get(target_id, "")
             if not target_name:
-                # targetId might be a URL like "http://backend:3000" or a plain name like "app"
-                # Extract hostname from URL if present
-                url_match = re.match(r"https?://([^:/]+)", target_id)
-                if url_match:
-                    hostname = url_match.group(1)
-                    # Match hostname to any resource name (may contain hostname as substring)
+                # ARM expression like [reference('database').id] — extract the
+                # symbolic name from the reference() call and match it to a
+                # known resource.
+                arm_ref_match = re.match(r"\[reference\('(\w+)'\)", target_id)
+                if arm_ref_match:
+                    ref_sym = arm_ref_match.group(1)
+                    # Match the symbolic name to any known resource name
                     for rname in id_to_name.values():
-                        if hostname in rname or rname in hostname:
+                        if rname == ref_sym:
                             target_name = rname
                             break
-                    if not target_name:
-                        # Use hostname itself as the target name
-                        target_name = hostname
-                else:
-                    # Plain name — try direct match
+
+                # targetId might be a URL like "http://backend:3000"
+                if not target_name:
+                    url_match = re.match(r"https?://([^:/]+)", target_id)
+                    if url_match:
+                        hostname = url_match.group(1)
+                        # Match hostname to any resource name (may contain hostname as substring)
+                        for rname in id_to_name.values():
+                            if hostname in rname or rname in hostname:
+                                target_name = rname
+                                break
+                        if not target_name:
+                            # Use hostname itself as the target name
+                            target_name = hostname
+
+                # Plain name — try direct match
+                if not target_name:
                     target_last = target_id.rstrip("/").rsplit("/", 1)[-1] if "/" in target_id else target_id
                     for rid, rname in id_to_name.items():
                         if rid.endswith("/" + target_last) or rname == target_last:

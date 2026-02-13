@@ -15,6 +15,12 @@ name: Generate Architecture Diagram
 on:
   push:
     branches: [main]
+    # Only run when files that affect the diagram change — skip
+    # automated README-only commits to prevent infinite loops.
+    paths:
+      - 'app.bicep'
+      - 'scripts/**'
+      - '.github/workflows/generate-architecture.yml'
   schedule:
     # Every 2 hours
     - cron: "0 */2 * * *"
@@ -33,10 +39,13 @@ jobs:
 
     steps:
       # -------------------------------------------------------
-      # Step 0: Checkout
+      # Step 0: Checkout latest main
       # -------------------------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
 
       # -------------------------------------------------------
       # Step 1: Spin up a Kind cluster
@@ -209,5 +218,11 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add README.md
           # Only commit if there are changes
-          git diff --staged --quiet || git commit -m "docs: update architecture diagram [automated]"
-          git push
+          if git diff --staged --quiet; then
+            echo "No diagram changes — nothing to commit."
+          else
+            git commit -m "docs: update architecture diagram [automated]"
+            # Pull latest main (rebase) in case it advanced while we ran
+            git pull --rebase origin main
+            git push
+          fi
