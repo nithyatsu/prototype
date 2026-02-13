@@ -1,9 +1,6 @@
 {
   "extensions": {
     "radius": "br:biceptypes.azurecr.io/radius:latest",
-    "aws": "br:biceptypes.azurecr.io/aws:latest",
-    "radresources": "./radiusResources.tgz",
-    "vol": "./pvResources.tgz",
-    "sec": "./secResources.tgz"
+    "aws": "br:biceptypes.azurecr.io/aws:latest"
   }
 }
