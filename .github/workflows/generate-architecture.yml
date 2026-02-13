@@ -91,10 +91,18 @@ jobs:
 
       - name: Install Radius with custom images
         run: |
-          # Watch pods in the background so we can see progress
+          # Watch pods and capture logs from failing pods in the background
           (while true; do
             echo "--- $(date +%H:%M:%S) radius-system pods ---"
-            kubectl get pods -n radius-system 2>/dev/null || echo "(namespace not yet created)"
+            kubectl get pods -n radius-system 2>/dev/null || { echo "(namespace not yet created)"; sleep 10; continue; }
+            # Check for pods that are not Running/Succeeded and dump logs + events
+            for pod in $(kubectl get pods -n radius-system --no-headers 2>/dev/null | grep -vE 'Running|Completed' | awk '{print $1}'); do
+              echo "⚠️  Pod $pod is not running — fetching logs:"
+              kubectl logs "$pod" -n radius-system --all-containers --tail=20 2>&1 || true
+              echo "⚠️  Pod $pod events:"
+              kubectl describe pod "$pod" -n radius-system 2>/dev/null | grep -A 20 "^Events:" || true
+              echo "---"
+            done
             sleep 10
           done) &
           WATCH_PID=$!
@@ -113,22 +121,32 @@ jobs:
           kubectl get pods -n radius-system
 
 
-      - name: Configure Radius workspace and environment
-        run: |
-          rad workspace create kubernetes
-          rad group create kind-radius
-          rad group switch kind-radius
-          # Use default namespace for the environment
-          rad env create kind-radius --namespace default
-          rad env switch kind-radius
+      # - name: Configure Radius workspace and environment
+      #   run: |
+      #     rad workspace create kubernetes
+      #     rad group create kind-radius
+      #     rad group switch kind-radius
+      #     # Use default namespace for the environment
+      #     rad env create kind-radius --namespace default
+      #     rad env switch kind-radius
 
       # -------------------------------------------------------
       # Debug: Describe applications-rp pod
       # -------------------------------------------------------
       - name: Describe applications-rp pod
+        if: always()
         run: |
           echo "=== Radius pods ==="
           kubectl get pods -n radius-system
+          echo ""
+          echo "=== Describe dynamic-rp ==="
+          kubectl describe pod -l app.kubernetes.io/name=dynamic-rp -n radius-system
+          echo ""
+          echo "=== dynamic-rp logs (current) ==="
+          kubectl logs -l app.kubernetes.io/name=dynamic-rp -n radius-system --all-containers --tail=100 2>&1 || true
+          echo ""
+          echo "=== dynamic-rp logs (previous crash) ==="
+          kubectl logs -l app.kubernetes.io/name=dynamic-rp -n radius-system --all-containers --previous --tail=100 2>&1 || true
           echo ""
           echo "=== Describe applications-rp ==="
           kubectl describe pod -l app.kubernetes.io/name=applications-rp -n radius-system
