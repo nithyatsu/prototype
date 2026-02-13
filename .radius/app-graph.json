@@ -1,12 +1,11 @@
 {
   "metadata": {
-    "generatedAt": "2026-02-13T18:15:15.999043409Z",
-    "radiusCliVersion": "ff86843",
+    "generatedAt": "2026-02-13T06:10:11.193917Z",
+    "radiusCliVersion": "v0.54.0-rc1-124-g21ea46e",
     "sourceFiles": [
       "app.bicep"
     ],
-    "sourceHash": "sha256:ebd7ef341c5798e7b480edaedd04db0f024b6b13b4a037a952fb46cda31efdf4",
-    "gitCommit": "5647335fb96c3070a6cf7769dd9c8be8b2ab3d61"
+    "sourceHash": "sha256:4c9ab1d1f3e03469c8f6f2c2b52ff1574fb5abdbdb00509a4723b7b9c573db79"
   },
   "resources": [
     {
@@ -17,37 +16,23 @@
         "file": "app.bicep",
         "line": 15
       },
-      "gitInfo": {
-        "commitSha": "cc4cf178934be29b8877c3090e704e50c0d788bc",
-        "commitShort": "cc4cf17",
-        "author": "nithyasu@microsoft.com",
-        "date": "2026-02-12T00:13:52Z",
-        "message": "Add prototype app with frontend, backend, and database"
-      },
       "properties": {
         "environment": "[parameters('environment')]"
       }
     },
     {
-      "id": "/planes/radius/local/resourceGroups/default/providers/Applications.Core/containers/backend",
-      "name": "backend",
+      "id": "/planes/radius/local/resourceGroups/default/providers/Applications.Core/containers/frontend",
+      "name": "frontend",
       "type": "Applications.Core/containers",
       "sourceLocation": {
         "file": "app.bicep",
-        "line": 50
-      },
-      "gitInfo": {
-        "commitSha": "ca39411dc103c16469852b65ca142d22e444116e",
-        "commitShort": "ca39411",
-        "author": "nithyasu@microsoft.com",
-        "date": "2026-02-13T06:05:18Z",
-        "message": "wip"
+        "line": 23
       },
       "properties": {
         "application": "[reference('app').id]",
         "connections": {
-          "database": {
-            "source": "[reference('database').id]"
+          "backend": {
+            "source": "http://backend:3000"
           }
         },
         "container": {
@@ -66,25 +51,18 @@
       }
     },
     {
-      "id": "/planes/radius/local/resourceGroups/default/providers/Applications.Core/containers/frontend",
-      "name": "frontend",
+      "id": "/planes/radius/local/resourceGroups/default/providers/Applications.Core/containers/backend",
+      "name": "backend",
       "type": "Applications.Core/containers",
       "sourceLocation": {
         "file": "app.bicep",
-        "line": 23
-      },
-      "gitInfo": {
-        "commitSha": "ca39411dc103c16469852b65ca142d22e444116e",
-        "commitShort": "ca39411",
-        "author": "nithyasu@microsoft.com",
-        "date": "2026-02-13T06:05:18Z",
-        "message": "wip"
+        "line": 50
       },
       "properties": {
         "application": "[reference('app').id]",
         "connections": {
-          "backend": {
-            "source": "http://backend:3000"
+          "database": {
+            "source": "[reference('database').id]"
           }
         },
         "container": {
@@ -110,13 +88,6 @@
         "file": "app.bicep",
         "line": 152
       },
-      "gitInfo": {
-        "commitSha": "ca39411dc103c16469852b65ca142d22e444116e",
-        "commitShort": "ca39411",
-        "author": "nithyasu@microsoft.com",
-        "date": "2026-02-13T06:05:18Z",
-        "message": "wip"
-      },
       "properties": {
         "application": "[reference('app').id]",
         "environment": "[parameters('environment')]"
@@ -125,8 +96,13 @@
   ],
   "connections": [
     {
-      "sourceId": "/planes/radius/local/resourceGroups/default/providers/Applications.Core/containers/backend",
-      "targetId": "/planes/radius/local/resourceGroups/default/providers/Applications.Datastores/redisCaches/database",
+      "sourceId": "/planes/radius/local/resourceGroups/default/providers/Applications.Core/containers/frontend",
+      "targetId": "http://backend:3000",
+      "type": "connection"
+    },
+    {
+      "sourceId": "/planes/radius/local/resourceGroups/default/providers/Applications.Core/containers/frontend",
+      "targetId": "app",
       "type": "dependsOn"
     },
     {
@@ -140,14 +116,9 @@
       "type": "dependsOn"
     },
     {
-      "sourceId": "/planes/radius/local/resourceGroups/default/providers/Applications.Core/containers/frontend",
-      "targetId": "app",
+      "sourceId": "/planes/radius/local/resourceGroups/default/providers/Applications.Core/containers/backend",
+      "targetId": "/planes/radius/local/resourceGroups/default/providers/Applications.Datastores/redisCaches/database",
       "type": "dependsOn"
-    },
-    {
-      "sourceId": "/planes/radius/local/resourceGroups/default/providers/Applications.Core/containers/frontend",
-      "targetId": "http://backend:3000",
-      "type": "connection"
     },
     {
       "sourceId": "/planes/radius/local/resourceGroups/default/providers/Applications.Datastores/redisCaches/database",

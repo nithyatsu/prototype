@@ -156,4 +156,3 @@ resource backend 'Applications.Core/containers@2023-10-01-preview' = {
 //     application: app.id
 //     environment: environment
 //   }
-}
