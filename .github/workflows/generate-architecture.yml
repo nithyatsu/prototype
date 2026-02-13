@@ -71,8 +71,32 @@ jobs:
           rad env switch kind-radius
 
       # -------------------------------------------------------
-      # Step 3: Generate the application graph
+      # Debug: Describe applications-rp pod
       # -------------------------------------------------------
+      - name: Describe applications-rp pod
+        run: |
+          echo "=== Radius pods ==="
+          kubectl get pods -n radius-system
+          echo ""
+          echo "=== Describe applications-rp ==="
+          kubectl describe pod -l app.kubernetes.io/name=applications-rp -n radius-system
+          echo ""
+          echo "=== applications-rp logs ==="
+          kubectl logs -l app.kubernetes.io/name=applications-rp -n radius-system --tail=50 || true
+
+      # -------------------------------------------------------
+      # Step 3: Verify file path & generate the application graph
+      # -------------------------------------------------------
+      - name: Verify app.bicep exists
+        run: |
+          echo "GITHUB_WORKSPACE = ${{ github.workspace }}"
+          echo "pwd = $(pwd)"
+          ls -la "${{ github.workspace }}/"
+          echo ""
+          echo "app.bicep location:"
+          find "${{ github.workspace }}" -name "app.bicep" -type f
+          test -f "${{ github.workspace }}/app.bicep" && echo "✅ app.bicep found" || echo "❌ app.bicep NOT found"
+
       - name: Run rad app graph
         run: |
           rad app graph "${{ github.workspace }}/app.bicep" > /tmp/rad-graph-output.txt
@@ -80,7 +104,7 @@ jobs:
           cat /tmp/rad-graph-output.txt
 
       # -------------------------------------------------------
-      # Steps 5-6: Build Mermaid graph & update README
+      # Steps 4-5: Build Mermaid graph & update README
       # -------------------------------------------------------
       - name: Set up Python
         uses: actions/setup-python@v5
