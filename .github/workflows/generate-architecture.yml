@@ -61,7 +61,9 @@ jobs:
             --set dynamicrp.image=ghcr.io/nithyatsu/dynamic-rp,dynamicrp.tag=latest \
             --set controller.image=ghcr.io/nithyatsu/controller,controller.tag=latest \
             --set ucp.image=ghcr.io/nithyatsu/ucpd,ucp.tag=latest \
-            --set bicep.image=ghcr.io/nithyatsu/bicep,bicep.tag=latest
+            --set bicep.image=ghcr.io/nithyatsu/bicep,bicep.tag=latest \
+            --set global.imagePullPolicy=Always \
+            --chart-options="--timeout 15m0s"
 
       - name: Configure Radius workspace and environment
         run: |
