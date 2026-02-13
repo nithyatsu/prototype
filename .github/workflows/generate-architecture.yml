@@ -1,9 +1,10 @@
 # ---------------------------------------------------------------
 # Architecture Diagram Generator
 # ---------------------------------------------------------------
-# Parses app.bicep, generates an interactive Mermaid architecture
-# diagram with clickable nodes linking to source lines, and
-# updates README.md with the diagram inline.
+# Spins up a Kind cluster, installs Radius with custom images,
+# runs `rad app graph` to extract resources & connections from
+# app.bicep, generates a Mermaid diagram with GitHub styling,
+# and updates README.md with the interactive graph.
 #
 # Trigger: Every 2 hours + manual dispatch
 # Based on: workflow-spec.md
@@ -25,21 +26,84 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # -------------------------------------------------------
+      # Step 0: Checkout
+      # -------------------------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # -------------------------------------------------------
+      # Step 1: Spin up a Kind cluster
+      # -------------------------------------------------------
+      - name: Create Kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: radius-graph
+          wait: 120s
+
+      - name: Verify cluster is ready
+        run: kubectl cluster-info && kubectl get nodes
+
+      # -------------------------------------------------------
+      # Step 2: Install Radius CLI & install into cluster
+      # -------------------------------------------------------
+      - name: Install Radius CLI
+        run: |
+          curl -fsSL "https://raw.githubusercontent.com/radius-project/radius/main/deploy/install.sh" | /bin/bash
+          rad version
+
+      - name: Install Radius with custom images
+        run: |
+          rad install kubernetes \
+            --set rp.image=ghcr.io/nithyatsu/applications-rp,rp.tag=latest \
+            --set dynamicrp.image=ghcr.io/nithyatsu/dynamic-rp,dynamicrp.tag=latest \
+            --set controller.image=ghcr.io/nithyatsu/controller,controller.tag=latest \
+            --set ucp.image=ghcr.io/nithyatsu/ucpd,ucp.tag=latest \
+            --set bicep.image=ghcr.io/nithyatsu/bicep,bicep.tag=latest
+
+      - name: Configure Radius workspace and environment
+        run: |
+          rad workspace create kubernetes
+          rad group create kind-radius
+          rad group switch kind-radius
+          # Use default namespace for the environment
+          rad env create kind-radius --namespace default
+          rad env switch kind-radius
+
+      - name: Wait for Radius pods to be ready
+        run: |
+          echo "Waiting for Radius pods..."
+          kubectl wait --for=condition=ready pod -l app.kubernetes.io/part-of=radius -n radius-system --timeout=300s
+          kubectl get pods -n radius-system
+
+      # -------------------------------------------------------
+      # Step 3: Generate the application graph
+      # -------------------------------------------------------
+      - name: Run rad app graph
+        run: |
+          rad app graph "${{ github.workspace }}/app.bicep" > /tmp/rad-graph-output.txt
+          echo "--- rad app graph output ---"
+          cat /tmp/rad-graph-output.txt
+
+      # -------------------------------------------------------
+      # Steps 5-6: Build Mermaid graph & update README
+      # -------------------------------------------------------
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - name: Generate architecture diagram
+      - name: Generate Mermaid diagram and update README
         env:
           REPO_OWNER: ${{ github.repository_owner }}
           REPO_NAME: ${{ github.event.repository.name }}
           REPO_BRANCH: ${{ github.ref_name }}
+          RAD_GRAPH_OUTPUT: /tmp/rad-graph-output.txt
         run: python scripts/generate_architecture.py
 
+      # -------------------------------------------------------
+      # Step 7: Commit and push (only if changed)
+      # -------------------------------------------------------
       - name: Commit and push changes
         run: |
           git config user.name "github-actions[bot]"

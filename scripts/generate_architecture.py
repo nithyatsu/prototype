@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
 """
-Parse app.bicep and generate an interactive architecture diagram using Mermaid.
+Generate an interactive Mermaid architecture diagram for README.md.
 
-GitHub natively renders Mermaid code blocks in markdown, and Mermaid supports
-click directives that turn nodes into hyperlinks. This means the diagram
-embedded directly in the README has clickable nodes - each one opens app.bicep
-at the line where that resource is defined.
+Two modes of operation:
+  1. **rad app graph** (primary) — reads structured output from `rad app graph`
+     via the RAD_GRAPH_OUTPUT env var. This is used in CI after Radius is
+     installed in a Kind cluster.
+  2. **Direct Bicep parsing** (fallback) — regex-parses app.bicep directly.
+     Used locally or when `rad app graph` is not yet available.
 
-No external HTML page, no image maps, no GitHub Pages needed.
+The generated Mermaid diagram uses GitHub's visual style (white background,
+rounded-corner nodes, green/amber borders) and has clickable nodes that open
+the corresponding line in app.bicep on GitHub.
 """
 
+import json
 import re
 import os
 import sys
@@ -80,6 +85,75 @@ def parse_bicep(bicep_path):
             conn = {"from": symbolic_name, "to": ref_name}
             if conn not in connections:
                 connections.append(conn)
+
+    return resources, connections
+
+
+def parse_rad_graph_output(output_path):
+    """Parse the output of `rad app graph` and extract resources and connections.
+
+    Expected format (JSON): a list of nodes with connections, e.g.:
+    {
+      "resources": [
+        {
+          "name": "frontend",
+          "type": "Applications.Core/containers",
+          "file": "app.bicep",
+          "line": 18,
+          "properties": { "image": "nginx:alpine", "port": 80 },
+          "connections": ["backend"]
+        },
+        ...
+      ]
+    }
+
+    If the output is not valid JSON, fall back to line-based parsing.
+    """
+    with open(output_path, "r") as f:
+        raw = f.read().strip()
+
+    resources = []
+    connections = []
+
+    try:
+        data = json.loads(raw)
+        for res in data.get("resources", []):
+            name = res.get("name", "unknown")
+            res_type = res.get("type", "")
+            line_number = res.get("line", 0)
+            props = res.get("properties", {})
+
+            # Categorize
+            if "containers" in res_type.lower():
+                category = "container"
+            elif "rediscaches" in res_type.lower() or "sqldatabases" in res_type.lower() or "mongodatabases" in res_type.lower():
+                category = "datastore"
+            elif "applications" in res_type.lower() and "containers" not in res_type.lower():
+                category = "application"
+            else:
+                category = "other"
+
+            resources.append({
+                "symbolic_name": name,
+                "display_name": name,
+                "resource_type": res_type,
+                "image": props.get("image"),
+                "port": str(props["port"]) if props.get("port") else None,
+                "category": category,
+                "line_number": line_number,
+            })
+
+            for target in res.get("connections", []):
+                connections.append({"from": name, "to": target})
+
+        print(f"Parsed rad app graph output: {len(resources)} resources, {len(connections)} connections")
+
+    except (json.JSONDecodeError, KeyError) as e:
+        print(f"Warning: Could not parse rad app graph output as JSON ({e})")
+        print("Raw output:")
+        print(raw[:500])
+        print("\nFalling back to direct Bicep parsing...")
+        return None, None
 
     return resources, connections
 
@@ -217,12 +291,23 @@ def main():
     repo_name = os.environ.get("REPO_NAME", "prototype")
     branch = os.environ.get("REPO_BRANCH", "main")
 
-    if not os.path.exists(bicep_path):
-        print(f"Error: {bicep_path} not found")
-        sys.exit(1)
+    # --- Try rad app graph output first (primary path in CI) ---
+    rad_graph_output = os.environ.get("RAD_GRAPH_OUTPUT")
+    resources = None
+    connections = None
 
-    print(f"Parsing {bicep_path}...")
-    resources, connections = parse_bicep(bicep_path)
+    if rad_graph_output and os.path.exists(rad_graph_output):
+        print(f"Reading rad app graph output from {rad_graph_output}...")
+        resources, connections = parse_rad_graph_output(rad_graph_output)
+
+    # --- Fallback: parse Bicep directly ---
+    if resources is None:
+        if not os.path.exists(bicep_path):
+            print(f"Error: {bicep_path} not found")
+            sys.exit(1)
+
+        print(f"Parsing {bicep_path} directly (fallback mode)...")
+        resources, connections = parse_bicep(bicep_path)
 
     print(f"Found {len(resources)} resources and {len(connections)} connections")
     for r in resources:
