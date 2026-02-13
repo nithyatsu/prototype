@@ -13,6 +13,7 @@ A simple **Frontend → Backend → Database** application built with [Radius](h
 
 
 
+
 > *Auto-generated from `app.bicep` — click any node to jump to its definition in the source.*
 
 ```mermaid
@@ -23,14 +24,10 @@ graph LR
     classDef other fill:#ffffff,stroke:#d1d9e0,stroke-width:1.5px,color:#1f2328,rx:6,ry:6
     backend["<b>backend</b>"]:::container
     frontend["<b>frontend</b>"]:::container
-    database["<b>database</b>"]:::datastore
-    backend --> database
     frontend --> backend
     click backend href "https://github.com/nithyatsu/prototype/blob/main/app.bicep#L50" "app.bicep:50" _blank
     click frontend href "https://github.com/nithyatsu/prototype/blob/main/app.bicep#L23" "app.bicep:23" _blank
-    click database href "https://github.com/nithyatsu/prototype/blob/main/app.bicep#L152" "app.bicep:152" _blank
     linkStyle 0 stroke:#2da44e,stroke-width:1.5px
-    linkStyle 1 stroke:#2da44e,stroke-width:1.5px
 ```
 
 

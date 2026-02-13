@@ -1,12 +1,12 @@
 {
   "metadata": {
-    "generatedAt": "2026-02-13T18:50:03.350502722Z",
+    "generatedAt": "2026-02-13T19:27:45.935942749Z",
     "radiusCliVersion": "ff86843",
     "sourceFiles": [
       "app.bicep"
     ],
-    "sourceHash": "sha256:ebd7ef341c5798e7b480edaedd04db0f024b6b13b4a037a952fb46cda31efdf4",
-    "gitCommit": "2e330a024c450afc4ce4f7d5a9a7cbf2e8d04223"
+    "sourceHash": "sha256:8ada473580725b316c5e8d251ee6b3920f75aecd0acbcaba365e535a0a53b272",
+    "gitCommit": "9d72e261d7de97393f4ae5cf4639c8d9675a968f"
   },
   "resources": [
     {
@@ -45,11 +45,6 @@
       },
       "properties": {
         "application": "[reference('app').id]",
-        "connections": {
-          "database": {
-            "source": "[reference('database').id]"
-          }
-        },
         "container": {
           "image": "[parameters('magpieimage')]",
           "ports": {
@@ -101,39 +96,9 @@
           }
         }
       }
-    },
-    {
-      "id": "/planes/radius/local/resourceGroups/default/providers/Applications.Datastores/redisCaches/database",
-      "name": "database",
-      "type": "Applications.Datastores/redisCaches",
-      "sourceLocation": {
-        "file": "app.bicep",
-        "line": 152
-      },
-      "gitInfo": {
-        "commitSha": "ca39411dc103c16469852b65ca142d22e444116e",
-        "commitShort": "ca39411",
-        "author": "nithyasu@microsoft.com",
-        "date": "2026-02-13T06:05:18Z",
-        "message": "wip"
-      },
-      "properties": {
-        "application": "[reference('app').id]",
-        "environment": "[parameters('environment')]"
-      }
     }
   ],
   "connections": [
-    {
-      "sourceId": "/planes/radius/local/resourceGroups/default/providers/Applications.Core/containers/backend",
-      "targetId": "/planes/radius/local/resourceGroups/default/providers/Applications.Datastores/redisCaches/database",
-      "type": "dependsOn"
-    },
-    {
-      "sourceId": "/planes/radius/local/resourceGroups/default/providers/Applications.Core/containers/backend",
-      "targetId": "[reference('database').id]",
-      "type": "connection"
-    },
     {
       "sourceId": "/planes/radius/local/resourceGroups/default/providers/Applications.Core/containers/backend",
       "targetId": "app",
@@ -148,11 +113,6 @@
       "sourceId": "/planes/radius/local/resourceGroups/default/providers/Applications.Core/containers/frontend",
       "targetId": "http://backend:3000",
       "type": "connection"
-    },
-    {
-      "sourceId": "/planes/radius/local/resourceGroups/default/providers/Applications.Datastores/redisCaches/database",
-      "targetId": "app",
-      "type": "dependsOn"
     }
   ]
 }
