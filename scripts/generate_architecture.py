@@ -76,9 +76,17 @@ def parse_bicep(bicep_path):
         conn_match = conn_pattern.search(body)
         if conn_match:
             conn_body = conn_match.group(1)
-            conn_entries = re.findall(r"(\w+):\s*\{", conn_body)
-            for target in conn_entries:
-                connections.append({"from": symbolic_name, "to": target})
+            # Extract source URLs/refs from connection entries
+            source_urls = re.findall(r"source:\s*'([^']+)'", conn_body)
+            for source_url in source_urls:
+                # source can be a URL like 'http://http-back-ctnr-simple1:3000'
+                # or a resource ref like 'backend.id'
+                url_match_inner = re.match(r"https?://([^:/]+)", source_url)
+                if url_match_inner:
+                    target_hostname = url_match_inner.group(1)
+                    connections.append({"from": symbolic_name, "to_hostname": target_hostname})
+                else:
+                    connections.append({"from": symbolic_name, "to": source_url})
 
         source_refs = re.findall(r"source:\s*(\w+)\.(id|connectionString)", body)
         for ref_name, _ in source_refs:
@@ -86,37 +94,49 @@ def parse_bicep(bicep_path):
             if conn not in connections:
                 connections.append(conn)
 
-    return resources, connections
+    # Resolve hostname-based connections to symbolic names
+    # Build lookup: display_name (resource name) -> symbolic_name
+    name_to_symbolic = {r["display_name"]: r["symbolic_name"] for r in resources}
+
+    resolved_connections = []
+    for conn in connections:
+        if "to_hostname" in conn:
+            hostname = conn["to_hostname"]
+            # Match hostname against resource display names
+            target_sym = name_to_symbolic.get(hostname)
+            if target_sym:
+                resolved_connections.append({"from": conn["from"], "to": target_sym})
+            else:
+                # Hostname didn't match any display name exactly; skip
+                print(f"  Warning: could not resolve connection target hostname '{hostname}'")
+        else:
+            resolved_connections.append(conn)
+
+    return resources, resolved_connections
 
 
 def parse_rad_graph_output(output_path):
     """Parse the output of `rad app graph` and extract resources and connections.
 
-    Expected format (JSON): an object with "resources" and "connections" arrays, e.g.:
+    Expected format (JSON) from `rad app graph <file.bicep>`:
     {
+      "metadata": { "sourceFiles": ["app.bicep"], ... },
       "resources": [
         {
           "id": "/planes/radius/local/resourceGroups/.../containers/frontend",
           "name": "frontend",
           "type": "Applications.Core/containers",
-          "file": "app.bicep",
-          "line": 18,
-          "properties": { "image": "nginx:alpine", "port": 80 }
+          "sourceLocation": { "file": "app.bicep", "line": 18 },
+          "properties": {
+            "container": { "image": "nginx:alpine", "ports": { "web": { "containerPort": 80 } } },
+            "connections": { "backend": { "source": "http://backend:3000" } }
+          }
         },
         ...
       ],
       "connections": [
-        {
-          "sourceId": "/planes/radius/local/.../containers/frontend",
-          "targetId": "http://backend:3000",
-          "type": "connection"
-        },
-        {
-          "sourceId": "/planes/radius/local/.../containers/frontend",
-          "targetId": "app",
-          "type": "dependsOn"
-        },
-        ...
+        { "sourceId": "/planes/.../containers/frontend", "targetId": "http://backend:3000", "type": "connection" },
+        { "sourceId": "/planes/.../containers/frontend", "targetId": "app", "type": "dependsOn" }
       ]
     }
 
@@ -125,21 +145,60 @@ def parse_rad_graph_output(output_path):
     with open(output_path, "r") as f:
         raw = f.read().strip()
 
+    # rad app graph may print status lines (e.g. "Building ...") before the JSON.
+    # Strip everything before the first '{' to get clean JSON.
+    json_start = raw.find("{")
+    if json_start > 0:
+        print(f"Skipping {json_start} bytes of non-JSON prefix")
+        raw = raw[json_start:]
+
     resources = []
     connections = []
 
     try:
         data = json.loads(raw)
 
-        # Build a lookup: resource id -> symbolic name
+        # Dynamically infer the bicep filename from metadata or first resource
+        bicep_filename = None
+        metadata = data.get("metadata", {})
+        source_files = metadata.get("sourceFiles", [])
+        if source_files:
+            bicep_filename = source_files[0]
+
+        # Build a lookup: resource id -> resource name
         id_to_name = {}
 
         for res in data.get("resources", []):
             name = res.get("name", "unknown")
             res_type = res.get("type", "")
             res_id = res.get("id", "")
-            line_number = res.get("line", 0)
             props = res.get("properties", {})
+
+            # sourceLocation is nested: { "file": "app.bicep", "line": 23 }
+            source_loc = res.get("sourceLocation", {})
+            line_number = source_loc.get("line", 0)
+            source_file = source_loc.get("file", "")
+
+            # Use the first resource's source file if metadata didn't have it
+            if not bicep_filename and source_file:
+                bicep_filename = source_file
+
+            # Extract image from nested properties.container.image
+            container = props.get("container", {})
+            image = container.get("image")
+            # Skip ARM template expressions like [parameters('magpieimage')]
+            if image and image.startswith("["):
+                image = None
+
+            # Extract port from nested properties.container.ports.*.containerPort
+            port = None
+            ports = container.get("ports", {})
+            for port_entry in ports.values():
+                if isinstance(port_entry, dict):
+                    cp = port_entry.get("containerPort")
+                    if cp and not str(cp).startswith("["):
+                        port = str(cp)
+                        break
 
             # Categorize
             if "containers" in res_type.lower():
@@ -155,18 +214,15 @@ def parse_rad_graph_output(output_path):
                 "symbolic_name": name,
                 "display_name": name,
                 "resource_type": res_type,
-                "image": props.get("image"),
-                "port": str(props["port"]) if props.get("port") else None,
+                "image": image,
+                "port": port,
                 "category": category,
                 "line_number": line_number,
+                "source_file": source_file,
             })
 
             if res_id:
                 id_to_name[res_id] = name
-
-            # Also handle per-resource connections list (legacy format)
-            for target in res.get("connections", []):
-                connections.append({"from": name, "to": target})
 
         # Parse top-level connections array (new format from rad app graph)
         for conn in data.get("connections", []):
@@ -220,15 +276,16 @@ def parse_rad_graph_output(output_path):
                     connections.append(conn_entry)
 
         print(f"Parsed rad app graph output: {len(resources)} resources, {len(connections)} connections")
+        print(f"Inferred bicep filename: {bicep_filename}")
 
     except (json.JSONDecodeError, KeyError) as e:
         print(f"Warning: Could not parse rad app graph output as JSON ({e})")
         print("Raw output:")
         print(raw[:500])
         print("\nFalling back to direct Bicep parsing...")
-        return None, None
+        return None, None, None
 
-    return resources, connections
+    return resources, connections, bicep_filename
 
 
 def get_github_file_url(repo_owner, repo_name, branch, file_path, line):
@@ -295,12 +352,14 @@ def generate_mermaid(resources, connections, repo_owner, repo_name, branch, bice
                 continue
             lines.append("    {} --> {}".format(conn["from"], conn["to"]))
 
-    # Add click directives — tooltip shows line number, click opens GitHub
+    # Add click directives — tooltip shows source file:line, click opens GitHub
     for res in resources:
         if res["category"] == "application":
             continue
-        url = get_github_file_url(repo_owner, repo_name, branch, bicep_file, res["line_number"])
-        tooltip = "{}:{}" .format(bicep_file, res["line_number"])
+        # Use per-resource source_file if available, otherwise fall back to bicep_file
+        res_file = res.get("source_file") or bicep_file
+        url = get_github_file_url(repo_owner, repo_name, branch, res_file, res["line_number"])
+        tooltip = "{}:{}" .format(res_file, res["line_number"])
         lines.append('    click {} href "{}" "{}" _blank'.format(res["symbolic_name"], url, tooltip))
 
     # Link style — GitHub gray, clean
@@ -371,7 +430,11 @@ def main():
 
     if rad_graph_output and os.path.exists(rad_graph_output):
         print(f"Reading rad app graph output from {rad_graph_output}...")
-        resources, connections = parse_rad_graph_output(rad_graph_output)
+        resources, connections, inferred_bicep = parse_rad_graph_output(rad_graph_output)
+        # Use the filename from rad app graph output (dynamically inferred)
+        if inferred_bicep:
+            bicep_file = inferred_bicep
+            print(f"Using bicep filename from rad output: {bicep_file}")
 
     # --- Fallback: parse Bicep directly ---
     if resources is None:

@@ -5,6 +5,10 @@ A simple **Frontend → Backend → Database** application built with [Radius](h
 ## Architecture
 
 
+
+
+
+
 > *Auto-generated from `app.bicep` — click any node to jump to its definition in the source.*
 
 ```mermaid
@@ -13,16 +17,12 @@ graph LR
     classDef container fill:#ffffff,stroke:#2da44e,stroke-width:1.5px,color:#1f2328,rx:6,ry:6
     classDef datastore fill:#ffffff,stroke:#d4a72c,stroke-width:1.5px,color:#1f2328,rx:6,ry:6
     classDef other fill:#ffffff,stroke:#d1d9e0,stroke-width:1.5px,color:#1f2328,rx:6,ry:6
-    frontend["<b>frontend</b><br/>nginx:alpine<br/>:80"]:::container
-    backend["<b>backend</b><br/>node:18-alpine<br/>:3000"]:::container
-    database["<b>database</b>"]:::datastore
-    frontend --> backend
-    backend --> database
-    click frontend "https://github.com/nithyatsu/prototype/blob/main/app.bicep#L18" "frontend — app.bicep line 18"
-    click backend "https://github.com/nithyatsu/prototype/blob/main/app.bicep#L45" "backend — app.bicep line 45"
-    click database "https://github.com/nithyatsu/prototype/blob/main/app.bicep#L75" "database — app.bicep line 75"
+    http-front-ctnr-simple1["<b>http-front-ctnr-simple1</b>"]:::container
+    http-back-ctnr-simple1["<b>http-back-ctnr-simple1</b>"]:::container
+    http-front-ctnr-simple1 --> http-back-ctnr-simple1
+    click http-front-ctnr-simple1 href "https://github.com/nithyatsu/prototype/blob/main/app.bicep#L23" "app.bicep:23" _blank
+    click http-back-ctnr-simple1 href "https://github.com/nithyatsu/prototype/blob/main/app.bicep#L50" "app.bicep:50" _blank
     linkStyle 0 stroke:#2da44e,stroke-width:1.5px
-    linkStyle 1 stroke:#2da44e,stroke-width:1.5px
 ```
 
 
