@@ -13,15 +13,15 @@ param port int = 3000
 param magpieimage string = 'ghcr.io/image-registry/magpie:latest'
 
 resource app 'Applications.Core/applications@2023-10-01-preview' = {
-  name: 'corerp-application-simple1'
+  name: 'simple-app'
   location: location
   properties: {
     environment: environment
   }
 }
 
-resource frontendContainer 'Applications.Core/containers@2023-10-01-preview' = {
-  name: 'http-front-ctnr-simple1'
+resource frontend 'Applications.Core/containers@2023-10-01-preview' = {
+  name: 'frontend'
   location: location
   properties: {
     application: app.id
@@ -40,15 +40,15 @@ resource frontendContainer 'Applications.Core/containers@2023-10-01-preview' = {
     }
     connections: {
       backend: {
-        source: 'http://http-back-ctnr-simple1:3000'
+        source: 'http://backend:3000'
       }
     }
   }
 }
 
 
-resource backendContainer 'Applications.Core/containers@2023-10-01-preview' = {
-  name: 'http-back-ctnr-simple1'
+resource backend 'Applications.Core/containers@2023-10-01-preview' = {
+  name: 'backend'
   location: location
   properties: {
     application: app.id
@@ -64,10 +64,15 @@ resource backendContainer 'Applications.Core/containers@2023-10-01-preview' = {
         kind: 'httpGet'
         containerPort: port
         path: '/healthz'
+      }}
+      connections: {
+      database: {
+        source: database.id
       }
     }
+    }
   }
-}
+
 
 
 // import radius as radius
@@ -143,11 +148,11 @@ resource backendContainer 'Applications.Core/containers@2023-10-01-preview' = {
 //   }
 // }
 
-// // Database - Redis used as a simple data store
-// resource database 'Applications.Datastores/redisCaches@2023-10-01-preview' = {
-//   name: 'database'
-//   properties: {
-//     application: app.id
-//     environment: environment
-//   }
-// }
+// Database - Redis used as a simple data store
+resource database 'Applications.Datastores/redisCaches@2023-10-01-preview' = {
+  name: 'database'
+  properties: {
+    application: app.id
+    environment: environment
+  }
+}
