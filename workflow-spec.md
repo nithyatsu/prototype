@@ -96,3 +96,35 @@ Replace the Architecture section's Mermaid code block with the newly generated o
 ### 7. Commit and push
 
 Auto-commit changes to `docs/` and `README.md` only if the graph has changed.
+
+---
+
+## User Story 4 — PR Graph Diff (P2)
+
+**Goal:** Show a visual diff of the app graph in PR comments so reviewers can see architectural impact without deploying.
+
+**Depends on:** User Stories 1–3 being stable.
+
+### Operational model
+
+The GitHub Action reads committed `.radius/app-graph.json` files from git history — it does **not** generate graphs on-demand. No Bicep/Radius tooling is needed, keeping the Action lightweight and fast.
+
+### Trigger events
+
+| Event | Behavior |
+|-------|----------|
+| `pull_request` | Posts a diff comment on the PR when `.radius/app-graph.json` changes |
+| `push` to `main` | Updates the baseline for historical comparison |
+
+### Monorepo support
+
+Auto-detect all `**/.radius/app-graph.json` files. Each graph is diffed independently with separate comment sections per application.
+
+### Acceptance criteria
+
+1. PR includes changes to `.radius/app-graph.json` → Action posts a comment showing the graph diff (added/removed/modified resources highlighted).
+2. PR has no changes to `.radius/app-graph.json` → Action posts "No app graph changes detected."
+3. PR adds a new connection → Diff clearly shows the new edge with source and target.
+4. PR comment already exists from a previous run → Existing comment is updated, not duplicated.
+5. Bicep files changed but `.radius/app-graph.json` was not updated → CI validation fails with a message to run `rad app graph` and commit the result.
+6. Monorepo with multiple apps (e.g. `apps/frontend/.radius/` and `apps/backend/.radius/`) → Unified comment with separate diff sections per application.

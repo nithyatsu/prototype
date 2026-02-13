@@ -1,0 +1,160 @@
+# ---------------------------------------------------------------
+# PR Graph Diff
+# ---------------------------------------------------------------
+# Reads committed .radius/app-graph.json files from base and head
+# commits, computes a diff, and posts (or updates) a PR comment
+# showing added / removed / modified resources and connections.
+#
+# Also validates that Bicep changes include an updated graph JSON.
+#
+# Based on: workflow-spec.md — User Story 4
+# ---------------------------------------------------------------
+
+name: PR Graph Diff
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  # ─────────────────────────────────────────────────────────────
+  # Job 1: Validate that graph JSON is up-to-date with Bicep
+  # ─────────────────────────────────────────────────────────────
+  validate-graph:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check Bicep vs graph consistency
+        run: |
+          # Get list of changed files in this PR
+          CHANGED=$(git diff --name-only ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }})
+
+          # Check if any .bicep files changed
+          BICEP_CHANGED=false
+          for f in $CHANGED; do
+            if [[ "$f" == *.bicep ]]; then
+              BICEP_CHANGED=true
+              break
+            fi
+          done
+
+          # Check if any app-graph.json changed
+          GRAPH_CHANGED=false
+          for f in $CHANGED; do
+            if [[ "$f" == */.radius/app-graph.json ]] || [[ "$f" == .radius/app-graph.json ]]; then
+              GRAPH_CHANGED=true
+              break
+            fi
+          done
+
+          if [[ "$BICEP_CHANGED" == "true" && "$GRAPH_CHANGED" == "false" ]]; then
+            echo "::error::Bicep files changed but .radius/app-graph.json was not updated."
+            echo ""
+            echo "Please run the following and commit the result:"
+            echo "  rad app graph app.bicep > .radius/app-graph.json"
+            echo ""
+            echo "Or strip the 'Building ...' prefix:"
+            echo "  rad app graph app.bicep | python3 -c \"import sys; r=sys.stdin.read(); i=r.find('{'); print(r[i:] if i>=0 else r, end='')\" > .radius/app-graph.json"
+            exit 1
+          fi
+
+          echo "✅ Graph consistency check passed."
+
+  # ─────────────────────────────────────────────────────────────
+  # Job 2: Compute and post the graph diff
+  # ─────────────────────────────────────────────────────────────
+  graph-diff:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Find changed graph files
+        id: find-graphs
+        run: |
+          # Find all app-graph.json files that changed, OR that exist in head
+          CHANGED=$(git diff --name-only ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }} -- '**/.radius/app-graph.json' '.radius/app-graph.json' 2>/dev/null || true)
+
+          if [ -z "$CHANGED" ]; then
+            echo "No app-graph.json files changed."
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            echo "graph_files=" >> "$GITHUB_OUTPUT"
+          else
+            echo "Changed graph files:"
+            echo "$CHANGED"
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+
+            # Multiline output
+            {
+              echo "graph_files<<EOF"
+              echo "$CHANGED"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Generate diff comment
+        env:
+          GRAPH_FILES: ${{ steps.find-graphs.outputs.graph_files }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          DIFF_OUTPUT: /tmp/graph-diff-comment.md
+          HAS_CHANGES: ${{ steps.find-graphs.outputs.has_changes }}
+        run: |
+          if [ "$HAS_CHANGES" = "false" ]; then
+            # No graph files changed — still post a "no changes" comment
+            echo "" > /tmp/graph-diff-env.txt
+          fi
+          python scripts/graph_diff.py
+          echo "--- Comment body ---"
+          cat /tmp/graph-diff-comment.md
+
+      - name: Post or update PR comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('/tmp/graph-diff-comment.md', 'utf8');
+            const marker = '<!-- pr-graph-diff -->';
+            const fullBody = marker + '\n' + body;
+
+            // Find existing comment from this action
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const existing = comments.find(c => c.body.includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: fullBody,
+              });
+              console.log(`Updated comment ${existing.id}`);
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: fullBody,
+              });
+              console.log('Created new comment');
+            }
