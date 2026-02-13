@@ -92,16 +92,29 @@ def parse_bicep(bicep_path):
 def parse_rad_graph_output(output_path):
     """Parse the output of `rad app graph` and extract resources and connections.
 
-    Expected format (JSON): a list of nodes with connections, e.g.:
+    Expected format (JSON): an object with "resources" and "connections" arrays, e.g.:
     {
       "resources": [
         {
+          "id": "/planes/radius/local/resourceGroups/.../containers/frontend",
           "name": "frontend",
           "type": "Applications.Core/containers",
           "file": "app.bicep",
           "line": 18,
-          "properties": { "image": "nginx:alpine", "port": 80 },
-          "connections": ["backend"]
+          "properties": { "image": "nginx:alpine", "port": 80 }
+        },
+        ...
+      ],
+      "connections": [
+        {
+          "sourceId": "/planes/radius/local/.../containers/frontend",
+          "targetId": "http://backend:3000",
+          "type": "connection"
+        },
+        {
+          "sourceId": "/planes/radius/local/.../containers/frontend",
+          "targetId": "app",
+          "type": "dependsOn"
         },
         ...
       ]
@@ -117,9 +130,14 @@ def parse_rad_graph_output(output_path):
 
     try:
         data = json.loads(raw)
+
+        # Build a lookup: resource id -> symbolic name
+        id_to_name = {}
+
         for res in data.get("resources", []):
             name = res.get("name", "unknown")
             res_type = res.get("type", "")
+            res_id = res.get("id", "")
             line_number = res.get("line", 0)
             props = res.get("properties", {})
 
@@ -143,8 +161,63 @@ def parse_rad_graph_output(output_path):
                 "line_number": line_number,
             })
 
+            if res_id:
+                id_to_name[res_id] = name
+
+            # Also handle per-resource connections list (legacy format)
             for target in res.get("connections", []):
                 connections.append({"from": name, "to": target})
+
+        # Parse top-level connections array (new format from rad app graph)
+        for conn in data.get("connections", []):
+            source_id = conn.get("sourceId", "")
+            target_id = conn.get("targetId", "")
+            conn_type = conn.get("type", "")
+
+            # Skip dependsOn connections to the application resource
+            if conn_type == "dependsOn":
+                continue
+
+            # Resolve sourceId to resource name
+            source_name = id_to_name.get(source_id, "")
+            if not source_name:
+                # Try matching by the last segment of the id
+                source_last = source_id.rstrip("/").rsplit("/", 1)[-1] if "/" in source_id else source_id
+                for rid, rname in id_to_name.items():
+                    if rid.endswith("/" + source_last):
+                        source_name = rname
+                        break
+
+            # Resolve targetId to resource name
+            target_name = id_to_name.get(target_id, "")
+            if not target_name:
+                # targetId might be a URL like "http://backend:3000" or a plain name like "app"
+                # Extract hostname from URL if present
+                url_match = re.match(r"https?://([^:/]+)", target_id)
+                if url_match:
+                    hostname = url_match.group(1)
+                    # Match hostname to any resource name (may contain hostname as substring)
+                    for rname in id_to_name.values():
+                        if hostname in rname or rname in hostname:
+                            target_name = rname
+                            break
+                    if not target_name:
+                        # Use hostname itself as the target name
+                        target_name = hostname
+                else:
+                    # Plain name — try direct match
+                    target_last = target_id.rstrip("/").rsplit("/", 1)[-1] if "/" in target_id else target_id
+                    for rid, rname in id_to_name.items():
+                        if rid.endswith("/" + target_last) or rname == target_last:
+                            target_name = rname
+                            break
+                    if not target_name:
+                        target_name = target_last
+
+            if source_name and target_name and source_name != target_name:
+                conn_entry = {"from": source_name, "to": target_name}
+                if conn_entry not in connections:
+                    connections.append(conn_entry)
 
         print(f"Parsed rad app graph output: {len(resources)} resources, {len(connections)} connections")
 
@@ -227,8 +300,8 @@ def generate_mermaid(resources, connections, repo_owner, repo_name, branch, bice
         if res["category"] == "application":
             continue
         url = get_github_file_url(repo_owner, repo_name, branch, bicep_file, res["line_number"])
-        tooltip = "{} — {} line {}".format(res["display_name"], bicep_file, res["line_number"])
-        lines.append('    click {} "{}" "{}"'.format(res["symbolic_name"], url, tooltip))
+        tooltip = "{}:{}" .format(bicep_file, res["line_number"])
+        lines.append('    click {} href "{}" "{}" _blank'.format(res["symbolic_name"], url, tooltip))
 
     # Link style — GitHub gray, clean
     edge_count = 0
