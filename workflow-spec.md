@@ -48,6 +48,7 @@ Run `rad app graph <fully-qualified-path-to-app.bicep>`.
 
 - The command requires an **absolute file path** (e.g., `${{ github.workspace }}/app.bicep`).
 - The command outputs a structured representation of the application's resources and their connections.
+- The command gets updated all the time. Try it out, update the workflow to work with the latest behavior. 
 
 ### 5. Build a visual graph from the output
 
