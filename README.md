@@ -1249,6 +1249,7 @@ A simple **Frontend → Backend → Database** application built with [Radius](h
 
 
 
+
 > *Auto-generated from `app.bicep` — click any node to jump to its definition in the source.*
 
 ```mermaid
