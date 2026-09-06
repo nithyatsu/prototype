@@ -1,12 +1,12 @@
 {
   "metadata": {
-    "generatedAt": "2026-09-06T13:27:04.809630117Z",
+    "generatedAt": "2026-09-06T16:44:32.406826532Z",
     "radiusCliVersion": "ff86843",
     "sourceFiles": [
       "app.bicep"
     ],
     "sourceHash": "sha256:8ada473580725b316c5e8d251ee6b3920f75aecd0acbcaba365e535a0a53b272",
-    "gitCommit": "92f007104719dc9694a938ebec569788452e456e"
+    "gitCommit": "1d889b743d3128a76263cf7d2a8388b8157f949a"
   },
   "resources": [
     {
